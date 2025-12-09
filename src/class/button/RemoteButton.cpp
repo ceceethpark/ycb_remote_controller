@@ -25,20 +25,20 @@ RemoteButton::RemoteButton() {
 }
 
 bool RemoteButton::begin() {
-    // I2C 초기??
+    // I2C 초기화
     Wire.begin(I2C_SDA, I2C_SCL);
     Wire.setClock(400000); // 400kHz Fast Mode
     
     delay(10);
     
-    // PCA9555 초기???�인
+    // PCA9555 초기화 확인
     Wire.beginTransmission(PCA9555_ADDRESS);
     if (Wire.endTransmission() != 0) {
-        Serial.println("PCA9555 초기???�패 - I2C ?�신 ?�류");
+        Serial.println("PCA9555 초기화 실패 - I2C 통신 오류");
         return false;
     }
     
-    // Port 0 (IOI_0 ~ IOI_7)???�력?�로 ?�정
+    // Port 0 (IOI_0 ~ IOI_7)을 입력으로 설정
     writePCA9555(CONFIG_PORT_0, 0xFF);
     
     // Port 1 (IOI_8 ~ IOI_11)을 입력으로 설정 (하위 4비트만)
@@ -109,7 +109,7 @@ void RemoteButton::setDoubleClickTime(unsigned long ms) {
 void RemoteButton::addEvent(ButtonEventInfo event) {
     uint8_t nextTail = (eventQueueTail + 1) % 20;
     
-    // ?��? 가??차�? ?�았?�면 추�?
+    // 큐가 가득 차지 않았으면 추가
     if (nextTail != eventQueueHead) {
         eventQueue[eventQueueTail] = event;
         eventQueueTail = nextTail;
@@ -120,7 +120,7 @@ bool RemoteButton::readButton(uint8_t buttonId) {
     if (buttonId >= BUTTON_COUNT) return false;
     
     uint16_t allButtons = readAllButtons();
-    // LOW = ?�림 (?�??
+    // LOW = 눌림 (풀업)
     return !(allButtons & (1 << buttonId));
 }
 
@@ -128,9 +128,9 @@ uint16_t RemoteButton::readAllButtons() {
     uint8_t port0 = readPCA9555(INPUT_PORT_0);
     uint8_t port1 = readPCA9555(INPUT_PORT_1);
     
-    // 12비트�??�용 (IOI_0 ~ IOI_11)
+    // 12비트만 사용 (IOI_0 ~ IOI_11)
     uint16_t buttons = ((uint16_t)port1 << 8) | port0;
-    buttons &= 0x0FFF; // ?�위 12비트�?
+    buttons &= 0x0FFF; // 하위 12비트만
     
     return buttons;
 }
@@ -146,7 +146,7 @@ uint8_t RemoteButton::readPCA9555(uint8_t reg) {
     Wire.beginTransmission(PCA9555_ADDRESS);
     Wire.write(reg);
     if (Wire.endTransmission() != 0) {
-        return 0xFF; // ?�류 ??모든 버튼 릴리?�로 간주
+        return 0xFF; // 오류 시 모든 버튼 릴리스로 간주
     }
     
     Wire.requestFrom(PCA9555_ADDRESS, (uint8_t)1);
@@ -163,10 +163,10 @@ void RemoteButton::processButton(uint8_t buttonId) {
     bool currentState = readButton(buttonId);
     unsigned long now = millis();
     
-    // ?�전 ?�태 ?�??
+    // 이전 상태 저장
     btn.wasPressed = btn.isPressed;
     
-    // ?�바?�싱
+    // 디바운싱
     if (currentState != btn.isPressed) {
         unsigned long timeSinceChange = btn.isPressed ? 
             (now - btn.pressTime) : (now - btn.releaseTime);
@@ -175,7 +175,7 @@ void RemoteButton::processButton(uint8_t buttonId) {
             btn.isPressed = currentState;
             
             if (btn.isPressed) {
-                // 버튼 ?�림
+                // 버튼 눌림
                 btn.pressTime = now;
                 
                 ButtonEventInfo event;
@@ -186,10 +186,10 @@ void RemoteButton::processButton(uint8_t buttonId) {
                 
                 Serial.print("버튼 ");
                 Serial.print(buttonId);
-                Serial.println(" ?�림");
+                Serial.println(" 눌림");
                 
             } else {
-                // 버튼 릴리??
+                // 버튼 릴리스
                 btn.releaseTime = now;
                 unsigned long pressDuration = now - btn.pressTime;
                 
@@ -197,7 +197,7 @@ void RemoteButton::processButton(uint8_t buttonId) {
                 event.buttonId = buttonId;
                 event.duration = pressDuration;
                 
-                // 롱프?�스 ?�인
+                // 롱프레스 확인
                 if (pressDuration >= longPressTime) {
                     event.event = BUTTON_LONG_PRESS;
                     Serial.print("버튼 ");
@@ -215,11 +215,11 @@ void RemoteButton::processButton(uint8_t buttonId) {
         }
     }
     
-    // 롱프?�스 체크 (버튼??계속 ?�려?�는 경우)
+    // 롱프레스 체크 (버튼이 계속 눌려있는 경우)
     if (btn.isPressed && btn.wasPressed) {
         unsigned long pressDuration = now - btn.pressTime;
         
-        // 롱프?�스 ?�간 ?�달 ???�번�??�벤??발생
+        // 롱프레스 시간 도달 시 한번만 이벤트 발생
         if (pressDuration >= longPressTime && 
             pressDuration < longPressTime + 100) {
             

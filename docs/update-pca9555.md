@@ -1,111 +1,239 @@
-# PCA9555 I2C 12???�보???�데?�트
+# PCA9555 I2C 12키 키보드 업데이트
 
-## 변�??�짜: 2025-12-09
+## 📅 변경일자: 2025-12-09
 
-### ?�� 주요 변경사??
+### 🔄 주요 변경사항
 
-#### 1. ?�보???�스???�전 변�?
-- **?�전**: GPIO 직접 ?�결 (4�?버튼)
-- **?�후**: PCA9555 I2C GPIO ?�장 (12�?버튼)
+#### 1. 키보드 시스템 완전 변경
+- **이전**: GPIO 직접 연결 (4개 버튼)
+- **이후**: PCA9555 I2C GPIO 확장 (12개 버튼)
 
-#### 2. RemoteButton ?�래???�데?�트
+#### 2. RemoteButton 클래스 업데이트
 
-##### ?�드?�어 ?�터?�이??
+##### 하드웨어 인터페이스
 ```cpp
-// ?�전 (GPIO 직접)
-GPIO 12, 13, 14, 27 ??4�?버튼
+// 이전 (GPIO 직접)
+GPIO 12, 13, 14, 27 - 4개 버튼
 
-// ?�후 (I2C)
+// 이후 (I2C)
 I2C SDA: GPIO 21
 I2C SCL: GPIO 22
 PCA9555 주소: 0x20
-버튼: IOI_0 ~ IOI_11 (12�?
+버튼: IOI_0 ~ IOI_11 (12개)
 ```
 
-##### API 변�?
+##### API 변경
 ```cpp
-// 버튼 ID 변�?
-?�전: BUTTON_1~4 (1~4)
-?�후: BUTTON_1~12 (0~11)
+// 버튼 ID 변경
+이전: BUTTON_1~4 (1~4)
+이후: BUTTON_0~11 (0~11)
 
-// 초기??반환�?추�?
-?�전: void begin();
-?�후: bool begin();  // 초기???�공/?�패 반환
+// 초기화 반환값 추가
+이전: void begin();
+이후: bool begin();  // 초기화 성공/실패 반환
 ```
 
-#### 3. LCD ?�스?�레???�이?�웃
-- 12�?버튼??3??4?�로 ?�시
-- 버튼 ?�벨: K0 ~ K11
-- ??컴팩?�한 버튼 ?�기 (70x35)
+#### 3. LCD 디스플레이 레이아웃
+- 12개 버튼을 3x4 그리드로 표시
+- 버튼 라벨: K0 ~ K11
+- 더 컴팩트한 버튼 크기 (70x35)
+- 실시간 상태 업데이트
 
-#### 4. ?�로??기능
-- I2C ?�신?�로 GPIO ?� ?�약
-- ??많�? 버튼 지??(4�???12�?
-- ?�장 가?�한 구조
+#### 4. 새로운 기능
+- I2C 통신으로 GPIO 핀 절약
+- 더 많은 버튼 지원 (4개 → 12개)
+- 확장 가능한 구조 (최대 16개까지)
+- 통합된 이벤트 처리 시스템
 
-### ?�� 변경된 ?�일
+### 📝 변경된 파일
 
-#### include/class/button/RemoteButton.h
-- PCA9555 ?��??�터 ?�의 추�?
-- I2C 관???�수 추�?
-- 12�?버튼 ID ?�의
-- I2C ?�기/?�기 ?�수 추�?
+#### src/class/button/RemoteButton.h
+```cpp
+// 추가된 상수
+static const uint8_t PCA9555_ADDRESS = 0x20;
+static const uint8_t I2C_SDA = 21;
+static const uint8_t I2C_SCL = 22;
+static const uint8_t BUTTON_COUNT = 12;
+
+// 추가된 레지스터 정의
+static const uint8_t INPUT_PORT_0 = 0x00;
+static const uint8_t INPUT_PORT_1 = 0x01;
+static const uint8_t CONFIG_PORT_0 = 0x06;
+static const uint8_t CONFIG_PORT_1 = 0x07;
+
+// 추가된 함수
+bool writePCA9555(uint8_t reg, uint8_t value);
+uint8_t readPCA9555(uint8_t reg);
+uint16_t readAllButtons();
+```
 
 #### src/class/button/RemoteButton.cpp
-- PCA9555 초기??로직
-- I2C ?�기/?�기 구현
-- 16비트 버튼 ?�태 ?�기
-- 버튼 ID�?0부???�작?�로 변�?
+```cpp
+// PCA9555 초기화
+bool RemoteButton::begin() {
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(400000);  // 400kHz Fast Mode
+    
+    // PCA9555 연결 확인
+    Wire.beginTransmission(PCA9555_ADDRESS);
+    if (Wire.endTransmission() != 0) {
+        Serial.println("PCA9555 초기화 실패!");
+        return false;
+    }
+    
+    // Port 0, 1을 입력으로 설정
+    writePCA9555(CONFIG_PORT_0, 0xFF);
+    writePCA9555(CONFIG_PORT_1, 0x0F);  // 하위 4비트만
+    
+    return true;
+}
+
+// 16비트 버튼 상태 읽기
+uint16_t RemoteButton::readAllButtons() {
+    uint8_t port0 = readPCA9555(INPUT_PORT_0);
+    uint8_t port1 = readPCA9555(INPUT_PORT_1);
+    uint16_t buttons = ((uint16_t)port1 << 8) | port0;
+    return buttons & 0x0FFF;  // 12비트만
+}
+```
 
 #### src/class/lcd/RemoteLCD.cpp
-- `showButtonStatus()`: 3??4???�이?�웃
-- `drawMainScreen()`: 12�?버튼 ?�시
+```cpp
+// 12개 버튼을 3x4 레이아웃으로 표시
+void RemoteLCD::drawMainScreen() {
+    clear();
+    setTextSize(2);
+    printTextCentered("ESP32 리모컨", 5, CYAN);
+    
+    // 3x4 버튼 그리드
+    for (uint8_t i = 0; i < 12; i++) {
+        uint8_t row = i / 4;
+        uint8_t col = i % 4;
+        uint16_t x = 10 + col * 75;
+        uint16_t y = 35 + row * 40;
+        drawButtonBox(x, y, 70, 35, i, false);
+    }
+    
+    // 상태 바
+    drawLine(0, 165, 320, 165, WHITE);
+    setTextSize(1);
+    printText("배터리: --% RSSI: --", 10, 170, GREEN);
+    printText("연결 대기중...", 10, 185, YELLOW);
+}
+```
 
 #### src/main.cpp
-- ?�보??초기???�류 처리 추�?
+```cpp
+void setup() {
+    // 키보드 초기화 오류 처리 추가
+    if (!buttons.begin()) {
+        Serial.println("PCA9555 초기화 실패!");
+        lcd.printTextCentered("키보드 오류!", 100, RED);
+        while (1);  // 중지
+    }
+    
+    // 핸들러 설정
+    buttons.setHandlers(&lcd, &espNow);
+}
 
-### ?�� ?�로??문서
-- `docs/pca9555-keyboard.md`: PCA9555 ?�정 ?�전 가?�드
+void loop() {
+    buttons.scan();
+    buttons.processEvents();  // 자동 이벤트 처리
+    led.update();
+    espNow.update();
+}
+```
 
-### ?�� ?�로???�데?�트 ?�요
+### 📚 새로운 문서
+- `docs/pca9555-keyboard.md`: PCA9555 설정 완전 가이드
+- `docs/update-pca9555.md`: 이 업데이트 문서
+
+### 🔌 하드웨어 업데이트 필요
 
 ```
-ESP32 ?�결:
-?��??�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�??
-??ESP32          PCA9555               ??
-??GPIO 21 (SDA) ??SDA                  ??
-??GPIO 22 (SCL) ??SCL                  ??
-??3.3V          ??VCC                  ??
-??GND           ??GND, A0, A1, A2     ??
-?��??�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�??
+ESP32 연결:
+┌─────────────────────────────────┐
+│ESP32          PCA9555            │
+│GPIO 21 (SDA) → SDA               │
+│GPIO 22 (SCL) → SCL               │
+│3.3V          → VCC               │
+│GND           → GND, A0, A1, A2  │
+└─────────────────────────────────┘
 
-버튼 ?�결:
-IOI_0 ~ IOI_11 ??�?버튼 ??GND
-(PCA9555 ?��? ?�???�용)
+버튼 연결:
+IOI_0 ~ IOI_11 각 버튼 - GND
+(PCA9555 내부 풀업 사용)
 ```
 
-### ?�� ?�스??방법
+### ✅ 테스트 방법
 
-1. I2C ?�캐?�로 PCA9555 ?�인 (주소 0x20)
-2. �?버튼 ?�러???�리??모니???�인
-3. LCD?�서 버튼 ?�태 ?�각???�인
+1. **I2C 스캔**: PCA9555 확인 (주소 0x20)
+2. **개별 버튼**: 각 버튼 눌러서 시리얼 모니터 확인
+3. **LCD 표시**: 버튼 상태가 시각적으로 확인
+4. **롱프레스**: 1초 이상 눌러서 이벤트 확인
+5. **디바운싱**: 깨끗한 입력 확인
 
-### ?�️ 주의?�항
+### ⚠️ 주의사항
 
-- **버튼 ID가 0부???�작**?�로 변경됨
-- I2C ?�???�???�요 (4.7kΩ)
-- PCA9555 주소가 A0~A2 ?�정???�라 변�?가??
+- **버튼 ID가 0부터 시작**으로 변경됨 (이전 1~4 → 현재 0~11)
+- I2C 풀업 저항 필요 (4.7kΩ)
+- PCA9555 주소가 A0~A2 설정에 따라 변경 가능
+- 최대 400kHz I2C 속도 사용
 
-### ?�� ?�능 비교
+### 📊 성능 비교
 
-| ??�� | ?�전 (GPIO) | ?�후 (I2C) |
-|------|-------------|------------|
-| 버튼 ??| 4�?| 12�?|
-| GPIO ?�용 | 4?� | 2?� (I2C) |
-| ?�캔 ?�도 | 매우 빠름 | 빠름 (400kHz) |
-| ?�장??| ?�한??| ?�수 |
+| 항목 | 이전 (GPIO) | 이후 (I2C) | 개선 |
+|------|-------------|------------|------|
+| 버튼 수 | 4개 | 12개 | +200% |
+| GPIO 사용 | 4핀 | 2핀 (I2C) | -50% |
+| 스캔 속도 | 매우 빠름 | 빠름 (400kHz) | 충분 |
+| 확장성 | 제한적 | 매우 좋음 | ++ |
+| 복잡도 | 낮음 | 중간 | + |
+| 비용 | 낮음 | 중간 | + |
 
-### ?�� ?�후 개선 가??
-- ?�터?�트 ?� ?�용 (??빠른 반응)
-- 16�?버튼 ?�체 ?�용 (IOI_0~15)
-- ?�중 PCA9555 ?�결 (??많�? 버튼)
+### 🔮 향후 개선 가능
+
+- 인터럽트 핀 사용 (더 빠른 반응)
+- 16개 버튼 전체 사용 (IOI_0~15)
+- 다중 PCA9555 연결 (더 많은 버튼)
+- LED 출력도 PCA9555로 제어
+
+### 🐛 알려진 이슈
+
+1. **I2C 충돌**: 다른 I2C 장치와 주소 충돌 가능
+   - 해결: A0~A2 핀으로 주소 변경
+
+2. **스캔 지연**: I2C 통신으로 약간의 지연
+   - 해결: 400kHz Fast Mode 사용
+
+3. **풀업 저항**: 없으면 통신 불안정
+   - 해결: 4.7kΩ 저항 추가
+
+### 💡 마이그레이션 가이드
+
+#### 코드 변경 불필요
+`RemoteButton` 클래스 API는 동일하게 유지되어 기존 코드 수정 불필요
+
+#### 하드웨어만 변경
+```cpp
+// 기존 코드 그대로 사용 가능
+buttons.begin();
+buttons.scan();
+if (buttons.isButtonPressed(0)) {
+    // 버튼 0 눌림
+}
+```
+
+#### 버튼 ID만 확인
+- 이전: 버튼 1,2,3,4 → 새로운: 버튼 0~11
+- 버튼 번호가 0부터 시작하는 것만 주의
+
+### 📖 추가 참고 자료
+
+- [PCA9555 데이터시트](https://www.ti.com/product/PCA9555)
+- [ESP32 I2C 가이드](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/i2c.html)
+- [I2C 프로토콜 설명](https://www.i2c-bus.org/)
+
+### 🎉 업데이트 완료!
+
+이제 12개 버튼을 사용하는 완전한 리모컨이 준비되었습니다!
