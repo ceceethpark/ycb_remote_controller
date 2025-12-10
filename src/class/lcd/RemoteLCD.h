@@ -23,6 +23,10 @@ public:
     void printTextCentered(const char* text, uint16_t y, uint16_t color = 0xFFFF);
     void setTextSize(uint8_t size);
     
+    // 한글 지원 (16x16 조합형 폰트)
+    int draw16String(int x, int y, uint16_t fgColor, uint16_t bgColor, const char* str, uint8_t timesX = 1, uint8_t nobg = 0);
+    int draw16Length(const char* str, uint8_t timesX = 1);
+    
     // 상태 표시
     void showButtonStatus(uint8_t buttonId, bool pressed);
     void showConnectionStatus(bool connected);
@@ -61,6 +65,20 @@ private:
     Adafruit_ST7789* tft;
     uint8_t currentTextSize;
     
+    // 한글 폰트 렌더링 변수
+    int _xchar;
+    int _ychar;
+    uint8_t _nobg;
+    uint8_t _times;
+    uint16_t fg_color;
+    uint16_t bg_color;
+    
+    // 한글 폰트 내부 함수
+    void draw16English(uint8_t ch);
+    void draw16Korean(uint16_t hangeul);
+    void setPixel(uint16_t x, uint16_t y, uint16_t color);
+    void fillRect16(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
+    
     // 핀 정의
     static const uint8_t TFT_CS   = 5;
     static const uint8_t TFT_DC   = 4;
@@ -68,9 +86,9 @@ private:
     static const uint8_t TFT_MOSI = 23;
     static const uint8_t TFT_SCLK = 18;
     
-    // 화면 크기
-    static const uint16_t SCREEN_WIDTH  = 320;
-    static const uint16_t SCREEN_HEIGHT = 240;
+    // 화면 크기 (세로형)
+    static const uint16_t SCREEN_WIDTH  = 240;
+    static const uint16_t SCREEN_HEIGHT = 320;
 };
 
 #endif // REMOTE_LCD_H

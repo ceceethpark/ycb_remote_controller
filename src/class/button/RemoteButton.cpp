@@ -1,6 +1,7 @@
 ﻿#include "RemoteButton.h"
 #include "../lcd/RemoteLCD.h"
 #include "../espnow/RemoteESPNow.h"
+#include "../cancom/RemoteCANCom.h"
 
 RemoteButton::RemoteButton() {
     debounceTime = 50;          // 50ms 디바운스
@@ -9,10 +10,14 @@ RemoteButton::RemoteButton() {
     
     eventQueueHead = 0;
     eventQueueTail = 0;
-    lastButtonState = 0xFFFF;   // 모든 버튼 릴리스 상태 (풀업)
+    lastButtonState = 0x1F;     // 5개 버튼 릴리스 상태 (풀업)
     
     pLcd = nullptr;
     pEspNow = nullptr;
+    pCanCom = nullptr;
+    
+    tripleButtonPressStart = 0;
+    settingsModeRequested = false;
     
     // 버튼 상태 초기화
     for (uint8_t i = 0; i < BUTTON_COUNT; i++) {
@@ -25,27 +30,21 @@ RemoteButton::RemoteButton() {
 }
 
 bool RemoteButton::begin() {
-    // I2C 초기화
-    Wire.begin(I2C_SDA, I2C_SCL);
-    Wire.setClock(400000); // 400kHz Fast Mode
+    // GPIO 핀 초기화 (12512WS-08 5버튼)
+    pinMode(PIN_BTN_SELECT, INPUT_PULLUP);  // SELECT (중앙)
+    pinMode(PIN_BTN_DOWN, INPUT_PULLUP);    // DOWN
+    pinMode(PIN_BTN_RIGHT, INPUT_PULLUP);   // RIGHT
+    pinMode(PIN_BTN_LEFT, INPUT_PULLUP);    // LEFT
+    pinMode(PIN_BTN_UP, INPUT_PULLUP);      // UP
     
-    delay(10);
-    
-    // PCA9555 초기화 확인
-    Wire.beginTransmission(PCA9555_ADDRESS);
-    if (Wire.endTransmission() != 0) {
-        Serial.println("PCA9555 초기화 실패 - I2C 통신 오류");
-        return false;
-    }
-    
-    // Port 0 (IOI_0 ~ IOI_7)을 입력으로 설정
-    writePCA9555(CONFIG_PORT_0, 0xFF);
-    
-    // Port 1 (IOI_8 ~ IOI_11)을 입력으로 설정 (하위 4비트만)
-    writePCA9555(CONFIG_PORT_1, 0x0F);
-    
-    Serial.println("PCA9555 버튼 초기화 완료 (12개)");
-    Serial.println("버튼 매핑: IOI_0~IOI_11 (ID: 0~11)");
+    printf("12512WS-08 버튼 초기화 완료 (5개)\r\n");
+    printf("버튼 매핑:\r\n");
+    printf("  SELECT(중앙): GPIO 12\r\n");
+    printf("  DOWN: GPIO 13\r\n");
+    printf("  RIGHT: GPIO 14\r\n");
+    printf("  LEFT: GPIO 27\r\n");
+    printf("  UP: GPIO 26\r\n");
+    printf("설정 모드: SELECT + LEFT + RIGHT 동시 누름\r\n");
     
     return true;
 }
@@ -54,6 +53,9 @@ void RemoteButton::scan() {
     for (uint8_t i = 0; i < BUTTON_COUNT; i++) {
         processButton(i);
     }
+    
+    // 설정 모드 콤보 확인
+    checkSettingsModeCombo();
 }
 
 bool RemoteButton::isButtonPressed(uint8_t buttonId) {
@@ -119,41 +121,54 @@ void RemoteButton::addEvent(ButtonEventInfo event) {
 bool RemoteButton::readButton(uint8_t buttonId) {
     if (buttonId >= BUTTON_COUNT) return false;
     
-    uint16_t allButtons = readAllButtons();
+    uint8_t pin = getPinForButton(buttonId);
     // LOW = 눌림 (풀업)
-    return !(allButtons & (1 << buttonId));
+    return digitalRead(pin) == LOW;
 }
 
-uint16_t RemoteButton::readAllButtons() {
-    uint8_t port0 = readPCA9555(INPUT_PORT_0);
-    uint8_t port1 = readPCA9555(INPUT_PORT_1);
-    
-    // 12비트만 사용 (IOI_0 ~ IOI_11)
-    uint16_t buttons = ((uint16_t)port1 << 8) | port0;
-    buttons &= 0x0FFF; // 하위 12비트만
-    
-    return buttons;
-}
-
-bool RemoteButton::writePCA9555(uint8_t reg, uint8_t value) {
-    Wire.beginTransmission(PCA9555_ADDRESS);
-    Wire.write(reg);
-    Wire.write(value);
-    return Wire.endTransmission() == 0;
-}
-
-uint8_t RemoteButton::readPCA9555(uint8_t reg) {
-    Wire.beginTransmission(PCA9555_ADDRESS);
-    Wire.write(reg);
-    if (Wire.endTransmission() != 0) {
-        return 0xFF; // 오류 시 모든 버튼 릴리스로 간주
+uint8_t RemoteButton::getPinForButton(uint8_t buttonId) {
+    switch (buttonId) {
+        case BTN_SELECT: return PIN_BTN_SELECT;
+        case BTN_DOWN: return PIN_BTN_DOWN;
+        case BTN_RIGHT: return PIN_BTN_RIGHT;
+        case BTN_LEFT: return PIN_BTN_LEFT;
+        case BTN_UP: return PIN_BTN_UP;
+        default: return 0;
     }
-    
-    Wire.requestFrom(PCA9555_ADDRESS, (uint8_t)1);
-    if (Wire.available()) {
-        return Wire.read();
+}
+
+bool RemoteButton::areButtonsPressed(uint8_t btn1, uint8_t btn2, uint8_t btn3) {
+    return readButton(btn1) && readButton(btn2) && readButton(btn3);
+}
+
+void RemoteButton::checkSettingsModeCombo() {
+    // SELECT + LEFT + RIGHT 동시 누름 확인
+    if (areButtonsPressed(BTN_SELECT, BTN_LEFT, BTN_RIGHT)) {
+        if (tripleButtonPressStart == 0) {
+            tripleButtonPressStart = millis();
+        } else if (millis() - tripleButtonPressStart > 1000 && !settingsModeRequested) {
+            // 1초 이상 눌림 -> 설정 모드 진입
+            settingsModeRequested = true;
+            printf("=== 설정 모드 콤보 감지 ===\r\n");
+            
+            if (pCanCom) {
+                pCanCom->enterSettingsMode();
+            }
+            
+            if (pLcd) {
+                pLcd->clear();
+                pLcd->setTextSize(2);
+                pLcd->printTextCentered("설정 모드", 10, RemoteLCD::CYAN);
+                pLcd->setTextSize(1);
+                pLcd->printTextCentered("CAN 연결 중...", 40, RemoteLCD::YELLOW);
+            }
+        }
+    } else {
+        tripleButtonPressStart = 0;
+        if (settingsModeRequested) {
+            settingsModeRequested = false;
+        }
     }
-    return 0xFF;
 }
 
 void RemoteButton::processButton(uint8_t buttonId) {
@@ -184,9 +199,7 @@ void RemoteButton::processButton(uint8_t buttonId) {
                 event.duration = 0;
                 addEvent(event);
                 
-                Serial.print("버튼 ");
-                Serial.print(buttonId);
-                Serial.println(" 눌림");
+                printf("버튼 %d 누림\r\n", buttonId);
                 
             } else {
                 // 버튼 릴리스
@@ -200,14 +213,10 @@ void RemoteButton::processButton(uint8_t buttonId) {
                 // 롱프레스 확인
                 if (pressDuration >= longPressTime) {
                     event.event = BUTTON_LONG_PRESS;
-                    Serial.print("버튼 ");
-                    Serial.print(buttonId);
-                    Serial.println(" 롱프레스");
+                    printf("버튼 %d 롱프레스\r\n", buttonId);
                 } else {
                     event.event = BUTTON_RELEASED;
-                    Serial.print("버튼 ");
-                    Serial.print(buttonId);
-                    Serial.println(" 릴리스");
+                    printf("버튼 %d 릴리스\r\n", buttonId);
                 }
                 
                 addEvent(event);
@@ -229,17 +238,16 @@ void RemoteButton::processButton(uint8_t buttonId) {
             event.duration = pressDuration;
             addEvent(event);
             
-            Serial.print("버튼 ");
-            Serial.print(buttonId);
-            Serial.println(" 롱프레스 감지");
+            printf("버튼 %d 롱프레스 감지\r\n", buttonId);
         }
     }
 }
 
 // 핸들러 설정
-void RemoteButton::setHandlers(RemoteLCD* lcd, RemoteESPNow* espNow) {
+void RemoteButton::setHandlers(RemoteLCD* lcd, RemoteESPNow* espNow, RemoteCANCom* canCom) {
     pLcd = lcd;
     pEspNow = espNow;
+    pCanCom = canCom;
 }
 
 // 이벤트 자동 처리
@@ -288,9 +296,7 @@ void RemoteButton::handleButtonReleased(uint8_t buttonId) {
 
 // 버튼 롱프레스 처리
 void RemoteButton::handleButtonLongPress(uint8_t buttonId) {
-    Serial.print("버튼 ");
-    Serial.print(buttonId);
-    Serial.println(" 롱프레스 - 특수 기능 실행");
+    printf("버튼 %d 롱프레스 - 특수 기능 실행\r\n", buttonId);
     
     if (pLcd) {
         // 롱프레스 특수 기능 (예: 설정 메뉴 등)

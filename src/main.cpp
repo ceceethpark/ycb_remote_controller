@@ -1,28 +1,31 @@
 /*
- * ESP32 WROOM 리모컨 송신기 (ESP-NOW)
+ * ESP32 WROOM 리모컨 송신기
  * 
  * 기능:
- * - ESP-NOW를 사용하여 버튼 입력을 무선으로 전송
- * - TFT LCD 디스플레이로 상태 표시
- * - 12개 버튼 입력 지원 (PCA9555 I2C)
- * - 클래스 기반 구조화된 코드
+ * - 5버튼 입력 지원 (12512WS-08: SELECT, UP, DOWN, LEFT, RIGHT)
+ * - ESP-NOW 무선 통신
+ * - CAN 통신 (차량 설정)
+ * - TFT LCD 디스플레이
+ * - 설정 모드: SELECT + LEFT + RIGHT 동시 누름 (1초)
  */
 
 #include "class/lcd/RemoteLCD.h"
 #include "class/button/RemoteButton.h"
 #include "class/led/RemoteLED.h"
 #include "class/espnow/RemoteESPNow.h"
+#include "class/cancom/RemoteCANCom.h"
 #include "class/ybcar/YbCar.h"
 #include "class/ybcarDoctor/YbCarDoctor.h"
 
 // 수신기 MAC 주소 (실제 수신기의 MAC 주소로 변경 필요)
 uint8_t receiverAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-// LCD, 버튼, LED, ESP-NOW, YbCar, YbCarDoctor 객체
+// 객체 생성
 RemoteLCD lcd;
 RemoteButton buttons;
 RemoteLED led;
 RemoteESPNow espNow;
+RemoteCANCom canCom;
 YbCar ybcar;
 YbCarDoctor doctor;
 
@@ -54,7 +57,7 @@ void onDataReceived(const uint8_t* mac, const uint8_t* data, int len) {
     doctor.handleSettingsMessage(settingsData);
   }
   else {
-    Serial.printf("수신 데이터 크기 불일치: %d bytes\n", len);
+    printf("수신 데이터 크기 불일치: %d bytes\r\n", len);
   }
 }
 
@@ -62,37 +65,49 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   
-  Serial.println("\n=== ESP32 리모컨 시작 ===");
+  printf("\r\n=== ESP32 리모컨 시작 ===\r\n");
   
   // LED 초기화
   led.begin();
   
   // LCD 초기화
-  Serial.println("LCD 초기화 중...");
+  printf("LCD 초기화 중...\r\n");
   if (lcd.begin()) {
     lcd.drawMainScreen();
-    Serial.println("LCD 초기화 성공");
+    printf("LCD 초기화 성공\r\n");
   } else {
-    Serial.println("LCD 초기화 실패!");
+    printf("LCD 초기화 실패!\r\n");
   }
   
-  // 버튼 초기화 (PCA9555 I2C)
-  Serial.println("버튼 초기화 중...");
+  // 버튼 초기화 (12512WS-08 5버튼)
+  printf("버튼 초기화 중...\r\n");
   if (!buttons.begin()) {
-    Serial.println("버튼 초기화 실패!");
+    printf("버튼 초기화 실패!\r\n");
     lcd.printTextCentered("버튼 초기화 실패!", 150, RemoteLCD::RED);
   } else {
-    Serial.println("12개 버튼 준비 완료");
+    printf("5개 버튼 준비 완료\r\n");
   }
   
-  // 버튼 핸들러 설정 (LCD와 ESP-NOW 연결)
-  buttons.setHandlers(&lcd, &espNow);
+  // CAN 통신 초기화 (ESP32 내장 CAN)
+  printf("CAN 통신 초기화 중...\r\n");
+  if (!canCom.begin(GPIO_NUM_21, GPIO_NUM_22)) {  // TX=GPIO21, RX=GPIO22
+    printf("CAN 초기화 실패!\r\n");
+    lcd.printTextCentered("CAN 초기화 실패", 170, RemoteLCD::YELLOW);
+  } else {
+    printf("ESP32 내장 CAN 준비 완료\r\n");
+    lcd.setTextSize(1);
+    lcd.printText("CAN: 500kbps", 200, 220, RemoteLCD::CYAN);
+  }
+  
+  // 핸들러 설정
+  buttons.setHandlers(&lcd, &espNow, &canCom);
+  canCom.setHandlers(&lcd, &doctor);
   
   // ESP-NOW 초기화
-  Serial.println("ESP-NOW 초기화 중...");
+  printf("ESP-NOW 초기화 중...\r\n");
   if (!espNow.begin()) {
-    Serial.println("ESP-NOW 초기화 실패!");
-    lcd.printTextCentered("ESP-NOW 초기화 실패!", 170, RemoteLCD::RED);
+    printf("ESP-NOW 초기화 실패!\r\n");
+    lcd.printTextCentered("ESP-NOW 초기화 실패!", 185, RemoteLCD::RED);
     return;
   }
   
@@ -114,35 +129,38 @@ void setup() {
   
   // 수신기 설정
   if (!espNow.setReceiver(receiverAddress)) {
-    Serial.println("수신기 설정 실패!");
+    printf("수신기 설정 실패!\r\n");
     lcd.showConnectionStatus(false);
     return;
   }
   
-  Serial.println("리모컨 준비 완료");
-  Serial.println("수신기 MAC 주소를 설정하세요!");
-  Serial.println("차량 데이터 수신 대기 중...");
+  printf("리모컨 준비 완료\r\n");
+  printf("수신기 MAC 주소를 설정하세요!\r\n");
+  printf("차량 데이터 수신 대기 중...\r\n");
   
   lcd.showConnectionStatus(true);
   
   // 차량 설정 요청 (5초 후)
   delay(5000);
-  Serial.println("차량 설정 요청 전송...");
+  printf("차량 설정 요청 전송...\r\n");
   doctor.requestSettings();
 }
 
 void loop() {
-  // 버튼 스캔
+  // 버튼 스캔 (설정 모드 콤보 체크 포함)
   buttons.scan();
   
   // LED 업데이트 (깜박임 처리)
   led.update();
   
-  // 이벤트 자동 처리 (RemoteButton 클래스에서 처리)
+  // 버튼 이벤트 자동 처리
   buttons.processEvents();
   
   // ESP-NOW 업데이트 (1초 주기로 배터리 및 RSSI 업데이트)
   espNow.update();
+  
+  // CAN 통신 업데이트 (메시지 수신 처리)
+  canCom.update();
   
   delay(10); // CPU 부하 감소
 }

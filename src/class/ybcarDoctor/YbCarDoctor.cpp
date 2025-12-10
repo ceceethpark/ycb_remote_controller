@@ -23,11 +23,11 @@ void YbCarDoctor::begin(RemoteLCD* lcd, RemoteESPNow* espNow) {
     
     // 저장된 설정 로드 시도
     if (!loadSettings()) {
-        Serial.println("저장된 설정 없음 - 기본값 사용");
+        printf("저장된 설정 없음 - 기본값 사용\r\n");
         currentSettings = defaultSettings;
     }
     
-    Serial.println("YbCarDoctor 클래스 초기화 완료");
+    printf("YbCarDoctor 클래스 초기화 완료\r\n");
 }
 
 void YbCarDoctor::initializeDefaultSettings() {
@@ -85,10 +85,10 @@ void YbCarDoctor::requestSettings() {
     esp_err_t result = esp_now_send(nullptr, (uint8_t*)&msg, sizeof(msg));
     
     if (result == ESP_OK) {
-        Serial.println("설정 요청 전송 완료");
+        printf("설정 요청 전송 완료\r\n");
         lastRequestTime = millis();
     } else {
-        Serial.println("설정 요청 전송 실패!");
+        printf("설정 요청 전송 실패!\r\n");
     }
 }
 
@@ -104,17 +104,17 @@ bool YbCarDoctor::updateSettings(const VehicleSettings& settings) {
     esp_err_t result = esp_now_send(nullptr, (uint8_t*)&msg, sizeof(msg));
     
     if (result == ESP_OK) {
-        Serial.println("=== 설정 업데이트 전송 ===");
-        Serial.printf("배터리: %dV\n", settings.batteryVoltage / 100);
-        Serial.printf("최대전류: %dA\n", settings.limitCurrent / 100);
-        Serial.printf("전진: %d%%, 후진: %d%%\n", settings.forward, settings.backward);
-        Serial.printf("모터온도: %dC, FET온도: %dC\n", settings.limitMotorTemp, settings.limitFetTemp);
+        printf("=== 설정 업데이트 전송 ===\r\n");
+        printf("배터리: %dV\r\n", settings.batteryVoltage / 100);
+        printf("최대전류: %dA\r\n", settings.limitCurrent / 100);
+        printf("전진: %d%%, 후진: %d%%\r\n", settings.forward, settings.backward);
+        printf("모터온도: %dC, FET온도: %dC\r\n", settings.limitMotorTemp, settings.limitFetTemp);
         
         currentSettings = settings;
         lastUpdateTime = millis();
         return true;
     } else {
-        Serial.println("설정 업데이트 전송 실패!");
+        printf("설정 업데이트 전송 실패!\r\n");
         return false;
     }
 }
@@ -124,42 +124,42 @@ void YbCarDoctor::handleSettingsMessage(const settings_message* msg) {
     
     // 체크섬 검증
     if (!verifyChecksum(msg)) {
-        Serial.println("설정 메시지 체크섬 오류!");
+        printf("설정 메시지 체크섬 오류!\r\n");
         return;
     }
     
     switch (msg->messageType) {
         case MSG_REQUEST_SETTINGS:
-            Serial.println("설정 요청 수신 (차량에서)");
+            printf("설정 요청 수신 (차량에서)\r\n");
             // 차량에서 설정을 요청 - 현재 설정을 응답
             updateSettings(currentSettings);
             break;
             
         case MSG_RESPONSE_SETTINGS:
-            Serial.println("=== 설정 응답 수신 ===");
+            printf("=== 설정 응답 수신 ===\r\n");
             currentSettings = msg->settings;
             settingsReceived = true;
             lastUpdateTime = millis();
             
             // 설정 정보 출력
-            Serial.printf("배터리전압: %d V\n", currentSettings.batteryVoltage / 100);
-            Serial.printf("최대전류: %d A\n", currentSettings.limitCurrent / 100);
-            Serial.printf("모터온도제한: %d°C\n", currentSettings.limitMotorTemp);
-            Serial.printf("FET온도제한: %d°C\n", currentSettings.limitFetTemp);
-            Serial.printf("전진: %d%%, 후진: %d%%\n", currentSettings.forward, currentSettings.backward);
+            printf("배터리전압: %d V\r\n", currentSettings.batteryVoltage / 100);
+            printf("최대전류: %d A\r\n", currentSettings.limitCurrent / 100);
+            printf("모터온도제한: %d°C\r\n", currentSettings.limitMotorTemp);
+            printf("FET온도제한: %d°C\r\n", currentSettings.limitFetTemp);
+            printf("전진: %d%%, 후진: %d%%\r\n", currentSettings.forward, currentSettings.backward);
             
             // LCD에 표시
             displaySettings();
             break;
             
         case MSG_UPDATE_SETTINGS:
-            Serial.println("설정 업데이트 확인 수신");
+            printf("설정 업데이트 확인 수신\r\n");
             settingsReceived = true;
             lastUpdateTime = millis();
             break;
             
         default:
-            Serial.println("알 수 없는 메시지 타입");
+            printf("알 수 없는 메시지 타입\r\n");
             break;
     }
 }
@@ -288,9 +288,9 @@ bool YbCarDoctor::saveSettings() {
     preferences.end();
     
     if (success) {
-        Serial.println("설정 저장 완료");
+        printf("설정 저장 완료\r\n");
     } else {
-        Serial.println("설정 저장 실패!");
+        printf("설정 저장 실패!\r\n");
     }
     
     return success;
@@ -325,7 +325,7 @@ bool YbCarDoctor::loadSettings() {
     
     preferences.end();
     
-    Serial.println("저장된 설정 로드 완료");
+    printf("저장된 설정 로드 완료\r\n");
     return true;
 }
 
@@ -417,5 +417,113 @@ void YbCarDoctor::displaySettingsMenu(uint8_t selectedIndex) {
         }
         
         pLcd->printText(menuItems[i], 20, yPos, color);
+    }
+}
+
+// CAN 버퍼에서 설정 로드 (64바이트 데이터 파싱)
+void YbCarDoctor::loadConfigFromBuffer(const uint8_t* buffer, uint8_t len) {
+    if (len < 64) {
+        printf("Config 버퍼 길이 부족: %d 바이트 (필요: 64바이트)\r\n", len);
+        return;
+    }
+    
+    printf("=== CAN Config 데이터 파싱 시작 ===\r\n");
+    
+    // 64바이트 데이터를 VehicleSettings 구조체로 파싱
+    // 실제 차량 프로토콜에 맞게 바이트 오프셋 조정 필요
+    
+    uint16_t offset = 0;
+    
+    // 배터리 전압 (2바이트, Little Endian)
+    currentSettings.batteryVoltage = buffer[offset] | (buffer[offset + 1] << 8);
+    offset += 2;
+    printf("배터리 전압: %d (raw: %d)\r\n", currentSettings.batteryVoltage / 100, currentSettings.batteryVoltage);
+    
+    // 최대 전류 (2바이트)
+    currentSettings.limitCurrent = buffer[offset] | (buffer[offset + 1] << 8);
+    offset += 2;
+    printf("최대 전류: %d A (raw: %d)\r\n", currentSettings.limitCurrent / 100, currentSettings.limitCurrent);
+    
+    // 모터 온도 제한 (2바이트, signed)
+    currentSettings.limitMotorTemp = (int16_t)(buffer[offset] | (buffer[offset + 1] << 8));
+    offset += 2;
+    printf("모터 온도 제한: %d°C\r\n", currentSettings.limitMotorTemp);
+    
+    // FET 온도 제한 (2바이트, signed)
+    currentSettings.limitFetTemp = (int16_t)(buffer[offset] | (buffer[offset + 1] << 8));
+    offset += 2;
+    printf("FET 온도 제한: %d°C\r\n", currentSettings.limitFetTemp);
+    
+    // 저전압 임계값 (2바이트)
+    currentSettings.lowBattery = buffer[offset] | (buffer[offset + 1] << 8);
+    offset += 2;
+    printf("저전압 임계값: %d V (raw: %d)\r\n", currentSettings.lowBattery / 100, currentSettings.lowBattery);
+    
+    // 바리티 (1바이트)
+    currentSettings.barityIm = buffer[offset++];
+    printf("바리티: %d (0:무한궤도, 1:바퀴)\r\n", currentSettings.barityIm);
+    
+    // 모터1 극성 (1바이트)
+    currentSettings.motor1Polarity = buffer[offset++];
+    printf("모터1 극성: %d\r\n", currentSettings.motor1Polarity);
+    
+    // 모터2 극성 (1바이트)
+    currentSettings.motor2Polarity = buffer[offset++];
+    printf("모터2 극성: %d\r\n", currentSettings.motor2Polarity);
+    
+    // 스로틀 오프셋 (2바이트)
+    currentSettings.throttleOffset = buffer[offset] | (buffer[offset + 1] << 8);
+    offset += 2;
+    printf("스로틀 오프셋: %d\r\n", currentSettings.throttleOffset);
+    
+    // 스로틀 변곡점 (2바이트)
+    currentSettings.throttleInflec = buffer[offset] | (buffer[offset + 1] << 8);
+    offset += 2;
+    printf("스로틀 변곡점: %d\r\n", currentSettings.throttleInflec);
+    
+    // 전진 비율 (1바이트)
+    currentSettings.forward = buffer[offset++];
+    printf("전진 비율: %d%%\r\n", currentSettings.forward);
+    
+    // 후진 비율 (1바이트)
+    currentSettings.backward = buffer[offset++];
+    printf("후진 비율: %d%%\r\n", currentSettings.backward);
+    
+    // 가속 (1바이트)
+    currentSettings.accel = buffer[offset++];
+    printf("가속: %d\r\n", currentSettings.accel);
+    
+    // 감속 (1바이트)
+    currentSettings.decel = buffer[offset++];
+    printf("감속: %d\r\n", currentSettings.decel);
+    
+    // 브레이크 지연 (2바이트)
+    currentSettings.brakeDelay = buffer[offset] | (buffer[offset + 1] << 8);
+    offset += 2;
+    printf("브레이크 지연: %d ms\r\n", currentSettings.brakeDelay);
+    
+    // 브레이크 레이트 (1바이트)
+    currentSettings.brakeRate = buffer[offset++];
+    printf("브레이크 레이트: %d\r\n", currentSettings.brakeRate);
+    
+    // 타임스탬프 업데이트
+    currentSettings.timestamp = millis();
+    
+    settingsReceived = true;
+    lastUpdateTime = millis();
+    
+    printf("=== Config 파싱 완료 (사용: %d / 64 바이트) ===\r\n", offset);
+    
+    // LCD에 설정 표시
+    displaySettings();
+}
+
+// CAN handleSettingsMessage 오버로드 (바이트 배열)
+void YbCarDoctor::handleSettingsMessage(const uint8_t* data, uint8_t len) {
+    printf("CAN 설정 메시지 수신: %d 바이트\r\n", len);
+    
+    // 단순 버퍼 복사 (추후 프로토콜에 따라 수정)
+    if (len <= 64) {
+        loadConfigFromBuffer(data, len);
     }
 }

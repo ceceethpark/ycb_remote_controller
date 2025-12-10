@@ -29,18 +29,17 @@ bool RemoteESPNow::begin() {
     // WiFi를 Station 모드로 설정
     WiFi.mode(WIFI_STA);
     
-    Serial.println("=== ESP-NOW 초기화 ===");
-    Serial.print("MAC 주소: ");
-    Serial.println(WiFi.macAddress());
+    printf("=== ESP-NOW 초기화 ===\r\n");
+    printf("MAC 주소: %s\r\n", WiFi.macAddress().c_str());
     
     // ESP-NOW 초기화
     if (esp_now_init() != ESP_OK) {
-        Serial.println("ESP-NOW 초기화 실패!");
+        printf("ESP-NOW 초기화 실패!\r\n");
         initialized = false;
         return false;
     }
     
-    Serial.println("ESP-NOW 초기화 성공");
+    printf("ESP-NOW 초기화 성공\r\n");
     
     // 전송/수신 콜백 등록
     esp_now_register_send_cb(onDataSentStatic);
@@ -52,7 +51,7 @@ bool RemoteESPNow::begin() {
 
 bool RemoteESPNow::setReceiver(const uint8_t* macAddress) {
     if (!initialized) {
-        Serial.println("ESP-NOW가 초기화되지 않았습니다!");
+        printf("ESP-NOW가 초기화되지 않았습니다!\r\n");
         return false;
     }
     
@@ -73,17 +72,14 @@ bool RemoteESPNow::setReceiver(const uint8_t* macAddress) {
     
     // 피어 추가
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        Serial.println("수신기 추가 실패!");
+        printf("수신기 추가 실패!\r\n");
         receiverSet = false;
         return false;
     }
     
-    Serial.print("수신기 설정 완료: ");
-    for (int i = 0; i < 6; i++) {
-        Serial.printf("%02X", receiverMac[i]);
-        if (i < 5) Serial.print(":");
-    }
-    Serial.println();
+    printf("수신기 설정 완료: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+           receiverMac[0], receiverMac[1], receiverMac[2],
+           receiverMac[3], receiverMac[4], receiverMac[5]);
     
     receiverSet = true;
     return true;
@@ -114,12 +110,12 @@ bool RemoteESPNow::sendButtonState(uint8_t buttonId, uint8_t state) {
 
 bool RemoteESPNow::sendData(const struct_message* data) {
     if (!initialized) {
-        Serial.println("ESP-NOW가 초기화되지 않았습니다!");
+        printf("ESP-NOW가 초기화되지 않았습니다!\r\n");
         return false;
     }
     
     if (!receiverSet) {
-        Serial.println("수신기가 설정되지 않았습니다!");
+        printf("수신기가 설정되지 않았습니다!\r\n");
         return false;
     }
     
@@ -128,16 +124,10 @@ bool RemoteESPNow::sendData(const struct_message* data) {
     esp_err_t result = esp_now_send(receiverMac, (uint8_t*)data, sizeof(struct_message));
     
     if (result == ESP_OK) {
-        Serial.print("버튼 ");
-        Serial.print(data->buttonId);
-        Serial.print(" 전송 요청 성공 (상태: ");
-        Serial.print(data->buttonState);
-        Serial.println(")");
+        printf("버튼 %d 전송 요청 성공 (상태: %d)\r\n", data->buttonId, data->buttonState);
         return true;
     } else {
-        Serial.print("버튼 ");
-        Serial.print(data->buttonId);
-        Serial.println(" 전송 요청 실패!");
+        printf("버튼 %d 전송 요청 실패!\r\n", data->buttonId);
         failCount++;
         return false;
     }
@@ -152,8 +142,7 @@ String RemoteESPNow::getMacAddress() {
 }
 
 void RemoteESPNow::printMacAddress() {
-    Serial.print("리모컨 MAC 주소: ");
-    Serial.println(WiFi.macAddress());
+    printf("리모컨 MAC 주소: %s\r\n", WiFi.macAddress().c_str());
 }
 
 bool RemoteESPNow::isInitialized() {
@@ -193,10 +182,10 @@ void RemoteESPNow::onDataSent(const uint8_t *mac_addr, esp_now_send_status_t sta
     
     if (success) {
         successCount++;
-        Serial.println("→ 전송 성공!");
+        printf("→ 전송 성공!\r\n");
     } else {
         failCount++;
-        Serial.println("→ 전송 실패!");
+        printf("→ 전송 실패!\r\n");
     }
     
     // 사용자 콜백 호출
@@ -241,11 +230,7 @@ void RemoteESPNow::update() {
         }
         
         // 디버그 출력
-        Serial.print("업데이트 - 배터리: ");
-        Serial.print(batteryLevel);
-        Serial.print("%, RSSI: ");
-        Serial.print(lastRSSI);
-        Serial.println(" dBm");
+        printf("업데이트 - 배터리: %d%%, RSSI: %d dBm\r\n", batteryLevel, lastRSSI);
     }
 }
 
@@ -261,14 +246,8 @@ void RemoteESPNow::onDataRecvStatic(const uint8_t *mac, const uint8_t *data, int
 
 void RemoteESPNow::onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
     // 디버그 출력
-    Serial.print("데이터 수신 (");
-    Serial.print(len);
-    Serial.print(" bytes) from: ");
-    for (int i = 0; i < 6; i++) {
-        Serial.printf("%02X", mac[i]);
-        if (i < 5) Serial.print(":");
-    }
-    Serial.println();
+    printf("데이터 수신 (%d bytes) from: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+           len, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
     // 사용자 콜백 호출
     if (receiveCallback) {

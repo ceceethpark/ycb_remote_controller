@@ -12,7 +12,7 @@ RemoteLED::RemoteLED() {
 void RemoteLED::begin() {
     pinMode(LED_PIN, OUTPUT);
     off();
-    Serial.println("LED 초기화 완료");
+    printf("LED 초기화 완료\r\n");
 }
 
 void RemoteLED::on() {

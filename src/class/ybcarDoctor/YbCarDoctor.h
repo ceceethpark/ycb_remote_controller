@@ -75,6 +75,10 @@ public:
     
     // 설정 수신 처리 (ESP-NOW 콜백에서 호출)
     void handleSettingsMessage(const settings_message* msg);
+    void handleSettingsMessage(const uint8_t* data, uint8_t len);
+    
+    // CAN 버퍼에서 설정 로드 (64바이트)
+    void loadConfigFromBuffer(const uint8_t* buffer, uint8_t len);
     
     // 현재 설정 가져오기
     const VehicleSettings& getSettings() const { return currentSettings; }

@@ -21,7 +21,7 @@ void YbCar::begin(RemoteLCD* lcd, RemoteESPNow* espNow) {
     pLcd = lcd;
     pEspNow = espNow;
     
-    Serial.println("YbCar 클래스 초기화 완료");
+    printf("YbCar 클래스 초기화 완료\r\n");
 }
 
 void YbCar::updateVehicleData(const vehicle_message* data) {
@@ -39,13 +39,13 @@ void YbCar::updateVehicleData(const vehicle_message* data) {
     lastUpdateTime = millis();
     
     // 디버그 출력
-    Serial.println("=== 차량 데이터 수신 ===");
-    Serial.printf("속도: %d km/h\n", vehicleData.speed);
-    Serial.printf("방향: %s\n", getDirectionString());
-    Serial.printf("배터리: %d%%\n", vehicleData.batteryLevel);
-    Serial.printf("모터 온도: %d°C\n", vehicleData.motorTemp);
-    Serial.printf("모터 전류: %d mA\n", vehicleData.motorCurrent);
-    Serial.printf("FET 온도: %d°C\n", vehicleData.fetTemp);
+    printf("=== 차량 데이터 수신 ===\r\n");
+    printf("속도: %d km/h\r\n", vehicleData.speed);
+    printf("방향: %s\r\n", getDirectionString());
+    printf("배터리: %d%%\r\n", vehicleData.batteryLevel);
+    printf("모터 온도: %d°C\r\n", vehicleData.motorTemp);
+    printf("모터 전류: %d mA\r\n", vehicleData.motorCurrent);
+    printf("FET 온도: %d°C\r\n", vehicleData.fetTemp);
     
     // LCD 업데이트
     updateDisplay();
