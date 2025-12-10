@@ -164,11 +164,12 @@ SN65HVD232 CANL ↔ 차량 CAN_L
   - 통신 거리: 약 200m (장애물 없을 시)
 
 #### CAN 통신 (설정 모드)
-- **프로토콜**: CAN 2.0B (ISO 11898)
+- **프로토콜**: CAN 2.0A (Standard 11-bit ID)
 - **하드웨어**: ESP32 내장 TWAI 컨트롤러
 - **용도**: 차량 파라미터 설정
 - **특징**:
   - 500kbps 보드레이트
+  - 표준 11비트 식별자 (0x000-0x7FF)
   - 산업 표준 프로토콜
   - 노이즈 내성 강함
   - 멀티마스터 지원
@@ -199,15 +200,14 @@ struct VehicleData {
 
 #### CAN 메시지 ID
 ```cpp
-// 설정 모드 제어
-0x110: CAN_MODE_ENTER      // 설정 모드 진입
-0x111: CAN_MODE_EXIT       // 설정 모드 종료
-0x112: CAN_MODE_ACK        // 모드 변경 확인
+// 송신 (TX)
+0x700: CAN_TX_GET_CONFIG      // Config 읽기 요청 (retrieve=1)
+0x701: CAN_TX_PUT_CMD         // Config 쓰기 명령
+0x708: CAN_TX_SAVE_CMD        // Config 저장 명령 (saving=1)
 
-// 설정 데이터
-0x100: CAN_SETTINGS_REQUEST   // 설정값 요청
-0x101: CAN_SETTINGS_RESPONSE  // 설정값 응답 (16개 파라미터)
-0x102: CAN_SETTINGS_UPDATE    // 설정값 변경
+// 수신 (RX)
+0x5B0-0x5B7: CAN_RX_DATA_ID_BASE  // Config 데이터 (8개 메시지, 각 8바이트 = 64바이트)
+0x5B8: CAN_RX_RESPONSE_ID         // VCU 응답
 ```
 
 ## 🎮 사용법
@@ -358,7 +358,7 @@ static const uint8_t TFT_RST = 15;
 ### 통신 프로토콜
 - [ESP-NOW 공식 문서](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_now.html)
 - [ESP32 TWAI (CAN) 드라이버](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/twai.html)
-- [CAN 2.0B 사양](https://www.can-cia.org/can-knowledge/)
+- [CAN 사양 및 지식](https://www.can-cia.org/can-knowledge/)
 
 ### 하드웨어
 - [ESP32 핀아웃 참조](https://randomnerdtutorials.com/esp32-pinout-reference-gpios/)
